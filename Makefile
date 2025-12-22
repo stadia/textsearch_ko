@@ -28,6 +28,18 @@ PG_CFLAGS += -I$(MECAB_HEADER)
 PG_CPPFLAGS += -I$(MECAB_HEADER)
 SHLIB_LINK += $(MECAB_LIBS)
 
+# macOS architecture filtering - only build for current system architecture
+ifeq ($(shell uname -s),Darwin)
+    UNAME_M := $(shell uname -m)
+    # Pre-filter pg_config CFLAGS before including PGXS
+    override CFLAGS := $(shell $(PG_CONFIG) --cflags | sed 's/-arch arm64//g' | sed 's/-arch x86_64//g')
+    ifeq ($(UNAME_M),arm64)
+        override CFLAGS += -arch arm64
+    else
+        override CFLAGS += -arch x86_64
+    endif
+endif
+
 # postgres build stuff
 ifdef USE_PGXS
 PG_CONFIG = pg_config

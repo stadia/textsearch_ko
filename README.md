@@ -103,35 +103,6 @@ mecab-config --libs
 mecab-config --cflags
 ```
 
-**Architecture Mismatch (macOS)**:
-
-If you get linker errors about undefined symbols or architecture mismatch:
-
-```bash
-# Check architectures
-uname -m                    # Should match PostgreSQL architecture
-file $(pg_config --pkglibdir)/../bin/postgres
-file /opt/homebrew/lib/libmecab.dylib
-
-# Apple Silicon Mac (arm64) - rebuild PostgreSQL and mecab-ko for arm64
-# Intel Mac (x86_64) - rebuild PostgreSQL and mecab-ko for x86_64
-
-# Quick fix: Force specific architecture during build
-make USE_PGXS=1 ARCHFLAGS="-arch arm64" clean
-make USE_PGXS=1 ARCHFLAGS="-arch arm64"
-sudo make USE_PGXS=1 ARCHFLAGS="-arch arm64" install
-
-# Or use Rosetta to run PostgreSQL in x86_64 mode
-arch -x86_64 /Applications/Postgres.app/Contents/Versions/15/bin/postgres
-```
-
-**PostgreSQL and mecab-ko version mismatch on macOS:**
-
-Postgres.app (Intel x86_64) with Homebrew mecab-ko (arm64):
-1. Option A: Reinstall PostgreSQL for arm64 from postgresapp.com
-2. Option B: Reinstall mecab-ko via MacPorts for x86_64
-3. Option C: Use ARCHFLAGS to force x86_64 build (shown above)
-
 ## Usage
 
 ### Enable Extension
