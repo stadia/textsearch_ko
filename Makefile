@@ -15,16 +15,6 @@ ifeq ($(PGVER_CHECK),no)
 $(error This extension requires PostgreSQL 12 or later. Current version: PostgreSQL $(PGVER))
 endif
 
-# macOS arm64 (Apple Silicon) support
-ifeq ($(shell uname -s),Darwin)
-    UNAME_M := $(shell uname -m)
-    ifeq ($(UNAME_M),arm64)
-        # Force arm64 architecture on Apple Silicon
-        ARCHFLAGS ?= -arch arm64
-        export ARCHFLAGS
-    endif
-endif
-
 OBJS = \
 	$(WIN32RES) \
 	ts_mecab_ko.o
