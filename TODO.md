@@ -2,6 +2,15 @@
 
 Project task tracking and roadmap for textsearch_ko.
 
+## Origin
+* extension 스크립트 추가
+* PostgreSQL 서버 버전 제한, 현재 9.1.x 이상 버전에서만 될 듯
+* 검색 제외어 (stop word) 처리
+* 한국어 normalizer 재코딩
+* ts_lexize() 에서 의도된 대로 결과 나오게
+* 한자 처리 - 일본어 한자, 중국어 한자 처리 문제 결정
+* 마지막으로 성능 통계 및 메모리 누수 확인
+
 ## Completed (v2.0)
 
 **PostgreSQL 12-17 Modernization:**
@@ -68,7 +77,45 @@ Project task tracking and roadmap for textsearch_ko.
 
 ## Medium Priority
 
-### 1. Improve hanja2hangul() Function
+### 1. Korean Normalizer Rewrite
+**Rationale:** Current `normalize()` and `ismbascii()` functions have limited coverage and poor maintainability
+**Impact:** Better text normalization for improved search accuracy
+**Effort:** Medium-High
+**Status:** Partially implemented
+
+**Current Implementation (L732-764, L679-724):**
+- Full-width → half-width ASCII conversion (U+FF01~U+FF5E)
+- Full-width space (U+3000) → half-width space
+- Circled numbers (①②③) → regular numbers
+- Circled alphabet (ⓐⓑⓒ) → regular letters
+- Space insertion between multi-byte and single-byte characters
+
+**Missing Normalizations:**
+- [ ] Hangul Compatibility Jamo (ㄱㄴㄷ U+3131~U+3163) → Hangul Jamo
+- [ ] Half-width Hangul (U+FFA0~U+FFDC) → full-width Hangul
+- [ ] Parenthesized Hangul (㈀㈁㈂ U+3200~U+321E) → regular Hangul
+- [ ] Circled Hangul (㉠㉡㉢ U+3260~U+327E) → regular Hangul
+- [ ] Unicode normalization (NFC/NFD unification)
+- [ ] Roman numerals (Ⅰ, Ⅱ, Ⅲ) → regular numbers/letters
+- [ ] Special symbols (㈜, ㈝) → regular text
+- [ ] Fraction characters (½, ⅓) → regular expression
+
+**Code Quality Improvements:**
+- [ ] Replace magic numbers with macros/constants
+- [ ] Introduce lookup table structure for extensibility
+- [ ] Separate `ismbascii()` into detection and conversion functions
+- [ ] Add comprehensive unit tests for each normalization rule
+
+**Tasks:**
+- [ ] Define Unicode range constants/macros
+- [ ] Implement Hangul-specific normalizations
+- [ ] Design extensible conversion table structure
+- [ ] Refactor `normalize()` and `ismbascii()` functions
+- [ ] Consider ICU integration for NFC normalization (optional)
+- [ ] Add regression tests for all normalization rules
+- [ ] Update documentation with supported normalizations
+
+### 2. Improve hanja2hangul() Function
 **Rationale:** Chinese character conversion is incomplete
 **Impact:** Better handling of Chinese characters in Korean text
 **Effort:** Medium
@@ -92,25 +139,6 @@ Project task tracking and roadmap for textsearch_ko.
 - [ ] Implement mapping selection strategy
 - [ ] Add error handling for edge cases
 - [ ] Update documentation with limitations
-
-### 2. Windows Port
-**Rationale:** Extend platform support
-**Impact:** Windows users can use the extension
-**Effort:** High - requires mecab-ko Windows build
-**Status:** Not started
-
-**Requirements:**
-- Mecab-ko for Windows
-- Visual Studio compiler support
-- .dll instead of .so
-- Library linking adjustments
-
-**Tasks:**
-- [ ] Test mecab-ko on Windows
-- [ ] Set up Visual Studio build environment
-- [ ] Create Windows-specific Makefile
-- [ ] Test extension loading
-- [ ] Document Windows installation
 
 ### 3. Performance Optimization
 **Rationale:** Morphological analysis is CPU-intensive
