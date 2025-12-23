@@ -1,7 +1,7 @@
 ﻿/*
  * ts_mecab_ko.c
  * License : BSD
- * This file is modified from textsearch_ja.c 
+ * This file is modified from textsearch_ja.c
  * Change Contents
  *  - code refactoring
  *  - customizing for mecab-ko-dic data
@@ -374,7 +374,7 @@ ts_mecabko_end(PG_FUNCTION_ARGS)
  * 이 함수로 넘어오는 단어는 형태소 분석기가 의미 단위로 분리한 그 단어가 넘어온다.
  * 예를 들어 '가까워졌음을'이 입력되면, {가깝,어,지,었,음,을} 로 분리하거나,
  * 약어, 동의어, 자동수정 등 기능을 할 수 있다.
- * 
+ *
  * 현재는 단지 용언 활용 부분만 처리한다.
  */
 Datum
@@ -409,7 +409,7 @@ ts_mecabko_lexize(PG_FUNCTION_ARGS)
 					res[i].lexeme = lexize(t, slashpos - t);
 					i += 1;
 				}
-				if(pluspos != NULL) 
+				if(pluspos != NULL)
 					t = pluspos + 1;
 			} while (pluspos != NULL);
 		}
@@ -440,6 +440,12 @@ mecabko_analyze(PG_FUNCTION_ARGS)
 	FuncCallContext	   *funcctx;
 	List		   *tuples;
 	HeapTuple	tuple;
+	typedef struct mecab_analyze_ctx
+	{
+		List	   *tuples;
+		ListCell   *cell;
+	} mecab_analyze_ctx;
+	mecab_analyze_ctx *state;
 
 	if (SRF_IS_FIRSTCALL())
 	{
@@ -474,7 +480,7 @@ mecabko_analyze(PG_FUNCTION_ARGS)
 			const char *pluspos;
 			const char *slashpos;
 
-			
+
 
 			MemoryContext	ctx;
 
@@ -487,7 +493,7 @@ mecabko_analyze(PG_FUNCTION_ARGS)
 			}
 
 			/* 단어 처리
-                         * conjtype 값이 Inflect 이면, 
+                         * conjtype 값이 Inflect 이면,
                          * detail 기준으로 row로 분리 */
 
 			csv = node->feature;
@@ -562,29 +568,35 @@ mecabko_analyze(PG_FUNCTION_ARGS)
 
 		}
 
+		state = (mecab_analyze_ctx *)
+			MemoryContextAlloc(funcctx->multi_call_memory_ctx,
+							   sizeof(mecab_analyze_ctx));
+		state->tuples = tuples;
+		state->cell = list_head(tuples);
+
 		funcctx->max_calls = list_length(tuples);
-		funcctx->user_fctx = tuples;
+		funcctx->user_fctx = state;
 
 		PG_FREE_IF_COPY(txt, 0);
 	}
 	else
 	{
 		funcctx = SRF_PERCALL_SETUP();
-		tuples = funcctx->user_fctx;
+		state = funcctx->user_fctx;
 	}
 
-	if (tuples == NIL)
+	if (state->cell == NULL)
 		SRF_RETURN_DONE(funcctx);
 
-	tuple = linitial(tuples);
-	funcctx->user_fctx = tuples = list_delete_first(tuples);
+	tuple = (HeapTuple) lfirst(state->cell);
+	state->cell = lnext(state->tuples, state->cell);
 
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 }
 
 /*
  * korean_normalize - normalize 함수 랩퍼
- * 
+ *
  */
 Datum
 korean_normalize(PG_FUNCTION_ARGS)
@@ -727,7 +739,7 @@ static bool ismbascii(const unsigned char *s, unsigned char *c, int *cnt){
  * normalize - 문자정리
  * 영숫자 : 전각 -> 반각
  * 영어, 숫자가 부분 포함 된 것을 공백으로 분리
- * TODO 
+ * TODO
  */
 static void
 normalize(StringInfo dst, const char *src, size_t srclen, append_t append)
