@@ -1,7 +1,7 @@
 ﻿/*
  * ts_mecab_ko.c
  * License : BSD
- * This file is modified from textsearch_ja.c 
+ * This file is modified from textsearch_ja.c
  * Change Contents
  *  - code refactoring
  *  - customizing for mecab-ko-dic data
@@ -9,7 +9,6 @@
  */
 #include "postgres.h"
 
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "funcapi.h"
@@ -94,8 +93,6 @@ static char *accept_parts_of_speech[13] = {
 	"NNG" ,"NNP" ,"NNB" ,"NNBC" ,"NR" ,"VV" ,"VA" ,"MM" ,"MAG" ,"XSN" ,"XR" ,"SH", ""
 };
 
-static char *ascii_sign = "`~!@#$%^&*()-=\\_+|[]{};':\",.<>/? ";
-
 /* mecab */
 static mecab_t	   *_mecab;
 
@@ -177,6 +174,17 @@ ts_mecabko_start(PG_FUNCTION_ARGS)
 	int					len	= PG_GETARG_INT32(1);
 	parser_data	   *parser;
 
+	/* Validate input length */
+	if (len < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid input length: %d", len)));
+
+	if (len > MaxAllocSize)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("input text too large: %d bytes", len)));
+
 	parser = (parser_data *) palloc(sizeof(parser_data));
 	initStringInfo(&parser->str);
 	/*
@@ -228,16 +236,36 @@ next_token(parser_data *parser)
 }
 
 /*
- * FIXME: グローバル変数 current_node 経由で処理中の node を渡すのは非常に危険
- * なのだが、他に ts_headline に対応する方法が無いので仕方なくこの方法を取っている.
- * この方式だと、ts_debug() が期待通りに動作しない問題がある.
- * FIXME : 전역 변수 current_node 통해 처리되는 node를 전달하는 것은 매우 위험하지만,
- * 다른 ts_headline에 대응하는 방법이 없기 때문에 어쩔 수없이 이 방법을 취하고있다.
- * 이 방식때문에 ts_debug ()이 예상대로 작동하지 않는 문제가있다. (구글번역)
- * 사전 처리에 문제가 있음 - ioseph
+ * THREAD SAFETY WARNING - Global Variable Issue
+ *
+ * The static variable current_node is used to pass morphological analysis
+ * context from ts_mecabko_gettoken() to ts_mecabko_lexize(). This is
+ * inherently thread-unsafe but is required due to PostgreSQL's text search
+ * API design, which doesn't provide a mechanism to pass custom context
+ * between the parser and lexizer.
+ *
+ * Known Limitations:
+ * 1. NOT safe for parallel query execution
+ * 2. ts_debug() may not work correctly due to context timing issues
+ * 3. Concurrent calls to ts_mecabko_lexize() may see stale data
+ *
+ * This approach works correctly for the primary use case (to_tsvector)
+ * because PostgreSQL's text search executes sequentially within a single
+ * backend process.
+ *
+ * Alternative solutions considered:
+ * - Thread-local storage: Not portable across PostgreSQL versions
+ * - Parser context modification: Would require PostgreSQL core changes
+ * - Redesigned API: Would break compatibility
+ *
+ * Current status: Known limitation, documented for future improvement.
+ *
+ * Original FIXME comments (Korean/Japanese):
+ * - 전역 변수 current_node 통해 처리되는 node를 전달하는 것은 매우 위험
+ * - グローバル変数 current_node 経由で処理中の node を渡すのは非常に危険
  */
 
-static const mecab_node_t *current_node;
+static const mecab_node_t *current_node;  /* Global state - see warning above */
 
 Datum
 ts_mecabko_gettoken(PG_FUNCTION_ARGS)
@@ -346,7 +374,7 @@ ts_mecabko_end(PG_FUNCTION_ARGS)
  * 이 함수로 넘어오는 단어는 형태소 분석기가 의미 단위로 분리한 그 단어가 넘어온다.
  * 예를 들어 '가까워졌음을'이 입력되면, {가깝,어,지,었,음,을} 로 분리하거나,
  * 약어, 동의어, 자동수정 등 기능을 할 수 있다.
- * 
+ *
  * 현재는 단지 용언 활용 부분만 처리한다.
  */
 Datum
@@ -381,7 +409,7 @@ ts_mecabko_lexize(PG_FUNCTION_ARGS)
 					res[i].lexeme = lexize(t, slashpos - t);
 					i += 1;
 				}
-				if(pluspos != NULL) 
+				if(pluspos != NULL)
 					t = pluspos + 1;
 			} while (pluspos != NULL);
 		}
@@ -412,13 +440,24 @@ mecabko_analyze(PG_FUNCTION_ARGS)
 	FuncCallContext	   *funcctx;
 	List		   *tuples;
 	HeapTuple	tuple;
-	HeapTuple	result;
+	typedef struct mecab_analyze_ctx
+	{
+		List	   *tuples;
+		ListCell   *cell;
+	} mecab_analyze_ctx;
+	mecab_analyze_ctx *state;
 
 	if (SRF_IS_FIRSTCALL())
 	{
 		text		   *txt = PG_GETARG_TEXT_PP(0);
 		const mecab_node_t *node;
 		TupleDesc	tupdesc;
+
+		/* Validate input text */
+		if (VARSIZE_ANY_EXHDR(txt) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid input text")));
 
 		if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 			elog(ERROR, "return and sql tuple descriptions are incompatible");
@@ -441,7 +480,7 @@ mecabko_analyze(PG_FUNCTION_ARGS)
 			const char *pluspos;
 			const char *slashpos;
 
-			
+
 
 			MemoryContext	ctx;
 
@@ -454,7 +493,7 @@ mecabko_analyze(PG_FUNCTION_ARGS)
 			}
 
 			/* 단어 처리
-                         * conjtype 값이 Inflect 이면, 
+                         * conjtype 값이 Inflect 이면,
                          * detail 기준으로 row로 분리 */
 
 			csv = node->feature;
@@ -529,31 +568,35 @@ mecabko_analyze(PG_FUNCTION_ARGS)
 
 		}
 
+		state = (mecab_analyze_ctx *)
+			MemoryContextAlloc(funcctx->multi_call_memory_ctx,
+							   sizeof(mecab_analyze_ctx));
+		state->tuples = tuples;
+		state->cell = list_head(tuples);
+
 		funcctx->max_calls = list_length(tuples);
-		funcctx->user_fctx = tuples;
+		funcctx->user_fctx = state;
 
 		PG_FREE_IF_COPY(txt, 0);
 	}
 	else
 	{
 		funcctx = SRF_PERCALL_SETUP();
-		tuples = funcctx->user_fctx;
+		state = funcctx->user_fctx;
 	}
 
-	if (tuples == NIL)
+	if (state->cell == NULL)
 		SRF_RETURN_DONE(funcctx);
 
-	tuple = linitial(tuples);
-	funcctx->user_fctx = tuples = list_delete_first(tuples);
-	result = heap_copytuple(tuple);
-	pfree(tuple);
+	tuple = (HeapTuple) lfirst(state->cell);
+	state->cell = lnext(state->tuples, state->cell);
 
-	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(result));
+	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 }
 
 /*
  * korean_normalize - normalize 함수 랩퍼
- * 
+ *
  */
 Datum
 korean_normalize(PG_FUNCTION_ARGS)
@@ -696,7 +739,7 @@ static bool ismbascii(const unsigned char *s, unsigned char *c, int *cnt){
  * normalize - 문자정리
  * 영숫자 : 전각 -> 반각
  * 영어, 숫자가 부분 포함 된 것을 공백으로 분리
- * TODO 
+ * TODO
  */
 static void
 normalize(StringInfo dst, const char *src, size_t srclen, append_t append)

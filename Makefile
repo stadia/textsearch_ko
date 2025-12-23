@@ -1,8 +1,19 @@
 EXTENSION = textsearch_ko        # the extensions name
 DATA = textsearch_ko--1.0.sql  # script files to install
 REGRESS = textsearch_ko_test # our test script file (without extension)
+REGRESS_OPTS = --inputdir=. --outputdir=.
 MODULE_big = ts_mecab_ko
 relocatable = true
+
+# PostgreSQL version detection and validation
+PG_CONFIG = pg_config
+PGVER := $(shell $(PG_CONFIG) --version | sed 's/PostgreSQL //' | cut -d. -f1)
+
+# Require PostgreSQL 12 or later
+PGVER_CHECK := $(shell test $(PGVER) -ge 12 && echo yes || echo no)
+ifeq ($(PGVER_CHECK),no)
+$(error This extension requires PostgreSQL 12 or later. Current version: PostgreSQL $(PGVER))
+endif
 
 OBJS = \
 	$(WIN32RES) \
@@ -16,6 +27,18 @@ MECAB_LIBS = $(shell mecab-config --libs)
 PG_CFLAGS += -I$(MECAB_HEADER)
 PG_CPPFLAGS += -I$(MECAB_HEADER)
 SHLIB_LINK += $(MECAB_LIBS)
+
+# macOS architecture filtering - only build for current system architecture
+ifeq ($(shell uname -s),Darwin)
+    UNAME_M := $(shell uname -m)
+    # Pre-filter pg_config CFLAGS before including PGXS
+    override CFLAGS := $(shell $(PG_CONFIG) --cflags | sed 's/-arch arm64//g' | sed 's/-arch x86_64//g')
+    ifeq ($(UNAME_M),arm64)
+        override CFLAGS += -arch arm64
+    else
+        override CFLAGS += -arch x86_64
+    endif
+endif
 
 # postgres build stuff
 ifdef USE_PGXS
