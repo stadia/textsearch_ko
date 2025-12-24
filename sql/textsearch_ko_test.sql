@@ -7,7 +7,7 @@
 CREATE EXTENSION textsearch_ko;
 
 -- Test 2: Verify parser object
-SELECT parname FROM pg_ts_parser WHERE parname = 'korean';
+SELECT prsname FROM pg_ts_parser WHERE prsname = 'korean';
 
 -- Test 3: Verify template object
 SELECT tmplname FROM pg_ts_template WHERE tmplname = 'mecabko';
